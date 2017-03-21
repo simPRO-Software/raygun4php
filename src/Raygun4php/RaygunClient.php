@@ -135,44 +135,12 @@ namespace Raygun4php {
     */
     public function SetUser($user = null, $firstName = null, $fullName = null, $email = null, $isAnonymous = null, $uuid = null)
     {
-      $timestamp = time() + 60 * 60 * 24 * 30;
-
-      $this->firstName = $this->StoreOrRetrieveUserCookie('rgfirstname', $firstName);
-      $this->fullName = $this->StoreOrRetrieveUserCookie('rgfullname', $fullName);
-      $this->email = $this->StoreOrRetrieveUserCookie('rgemail', $email);
-
-      $this->uuid = $this->StoreOrRetrieveUserCookie('rguuidvalue', $uuid);
-      $this->isAnonymous = $this->StoreOrRetrieveUserCookie('rgisanonymous', $isAnonymous ? 'true' : 'false') == 'true' ? true : false;
-
-      if (is_string($user))
-      {
-        $this->user = $user;
-
-        if (php_sapi_name() != 'cli' && !headers_sent())
-        {
-          setcookie('rguserid', $user, $timestamp);
-          setcookie('rguuid', 'false', $timestamp);
-        }
-      }
-      else
-      {
-        if (!array_key_exists('rguuid', $_COOKIE))
-        {
-          $this->user = (string)Uuid::uuid4();
-
-          if (php_sapi_name() != 'cli' && !headers_sent())
-          {
-            setcookie('rguserid', $this->user, $timestamp);
-            setcookie('rguuid', 'true', $timestamp);
-          }
-        }
-        else if (array_key_exists('rguserid', $_COOKIE))
-        {
-          $this->user = $_COOKIE['rguserid'];
-        }
-
-        $this->isAnonymous = $this->StoreOrRetrieveUserCookie('rgisanonymous', 'true') == 'true';
-      }
+      $this->firstName = $firstName;
+      $this->fullName = $fullName;
+      $this->email = $email;
+      $this->uuid = $uuid;
+      $this->isAnonymous = $isAnonymous;
+	  $this->user = $user;
     }
 
     private function StoreOrRetrieveUserCookie($key, $value)
@@ -446,7 +414,7 @@ namespace Raygun4php {
 
     /**
      * Use a proxy for sending HTTP requests to Raygun.
-     * 
+     *
      * @param String $url URL including protocol and an optional port, e.g. http://myproxy:8080
      * @return Raygun4php\RaygunClient
      */
