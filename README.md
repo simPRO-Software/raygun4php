@@ -1,7 +1,7 @@
 Raygun4PHP
 ==========
 
-[Raygun.io](http://raygun.io) provider for PHP 5.3+
+[Raygun.com](http://raygun.com) provider for PHP 5.3+
 
 [![Build
 Status](https://secure.travis-ci.org/MindscapeHQ/raygun4php.png?branch=master)](http://travis-ci.org/MindscapeHQ/raygun4php)
@@ -34,10 +34,10 @@ and the library will be imported ready for use.
 
 ### Manually with Git
 
-Clone this repository and copy src/Raygun4php into an appropriate subdirectory in your project, such as /vendor/Raygun4php. Add `requires` definitions for RaygunClient.php where you want to make a call to Send().
+Clone this repository and copy src/Raygun4php into an appropriate subdirectory in your project, such as /vendor/Raygun4php. Add a `requires` definition that references the location of RaygunClient.php where you want to make a call to Send().
 
 ```php
-require (dirname(dirname(__FILE__)).'/vendor/Raygun4php/RaygunClient.php');
+require __DIR__ . '/vendor/raygun4php/src/Raygun4php/RaygunClient.php';
 ```
 ## Usage
 
@@ -61,10 +61,25 @@ namespace
 	{
 		global $client;
 		$client->SendException($exception);
-	}
+    }
 
-	set_exception_handler('exception_handler');
-	set_error_handler("error_handler");
+    function fatal_error()
+    {
+        global $client;
+        $last_error = error_get_last();
+
+        if (!is_null($last_error)) {
+          $errno = $last_error['type'];
+          $errstr = $last_error['message'];
+          $errfile = $last_error['file'];
+          $errline = $last_error['line'];
+          $client->SendError($errno, $errstr, $errfile, $errline);
+        }
+    }
+
+    set_exception_handler('exception_handler');
+    set_error_handler("error_handler");
+    register_shutdown_function("fatal_error");
 }
 ```
 
@@ -138,6 +153,41 @@ If true is passed in, and **$useAsyncSending** is set to *false*, client->SendEx
 
 You can transmit the version number of your PHP project along with the message by calling `SetVersion()` on your RaygunClient after it is instantiated - this is optional but recommended as the version number is considered to be first-class data for a message.
 
+### Adding Tags
+
+Tags can be added to error data to provide extra information and to help filtering errors within Raygun.
+They are provided as an array of strings or numbers passed as the `5th argument to the SendError function` and as the `2nd argument to the SendException function`.
+
+The declaration of the exception and error handlers using tags could look something like this:
+
+```php
+$tags = array("testing-enviroment", "machine-4");
+
+function error_handler($errno, $errstr, $errfile, $errline) {
+	global $client, $tags;
+  	$client->SendError($errno, $errstr, $errfile, $errline, $tags);
+}
+
+function exception_handler($exception) {
+	global $client, $tags;
+	$client->SendException($exception, $tags);
+}
+
+function fatal_error()
+{
+  global $client;
+  $last_error = error_get_last();
+
+  if (!is_null($last_error)) {
+    $errno = $last_error['type'];
+    $errstr = $last_error['message'];
+    $errfile = $last_error['file'];
+    $errline = $last_error['line'];
+    $client->SendError($errno, $errstr, $errfile, $errline, $tags);
+  }
+}
+```
+
 ### Affected user tracking
 
 **New in 1.5: additional data support**
@@ -155,6 +205,19 @@ This feature and values are optional if you wish to disable it for privacy conce
 Note that this data is stored as cookies. If you do not call SetUser the default is to store a random UUID to represent the user.
 
 This feature can be used in CLI mode by calling SetUser() at the start of your session.
+
+### Custom error grouping
+
+Control of how error instances are grouped together can achieved by passing a callback to the `SetGroupingKey` method on the client. If the callback returns a string, ideally 100 characters or less, errors matching that key will grouped together. Overriding the default automatic grouping. If the callback returns a non-string value then that error will be grouped automatically.  
+
+```php
+$client = new \Raygun4php\RaygunClient("apiKey");
+$client->SetGroupingKey(function($payload, $stackTrace) {
+  // Inspect the above parameters and return a hash from the properties
+
+  return $payload->Details->Error->Message; // Naive message-based grouping only
+});
+```
 
 ### Filtering Sensitive Data
 
@@ -196,6 +259,21 @@ $client->setFilterParams(array(
 
 Note that when any filters are defined, the Raygun error will no longer contain the raw HTTP data, since there's no effective way to filter it.
 
+### Updating Cookie options
+
+Cookies are used for the user tracking functionality of the Raygun4Php provider. In version 1.8 of the provider, the options passed to the `setcookie` method can now be customized to your needs.
+
+```php
+$client = new \Raygun4php\RaygunClient("apiKey");
+$client->SetCookieOptions(array(
+    'expire'   => 2592000, // 30 * 24 * 60 * 60
+    'path'     => '/',
+    'domain'   => '',
+    'secure'   => false,
+    'httponly' => false
+));
+```
+
 ## Troubleshooting
 
 As above, enable debug mode by instantiating the client with
@@ -210,9 +288,30 @@ This will echo the HTTP response code. Check the list above, and create an issue
 
 If, when running a PHP script from the command line on *nix operating systems, you receive a '400 Bad Request' error (when debug mode is enabled), check to see if you have any LESS_TERMCAP environment variables set. These are not compatible with the current version of Raygun4PHP. As a workaround, unset these variables before your script runs, then reset them afterwards.
 
-## Changelog
 
--	1.6.1: Assign ClassName as exceptionClass
+### Error Control Operators (@)
+
+If you are using the setup as described above errors will be send to Raygun regardless of any lines prepended with an error control operator (the @ symbol). To stop these errors from being sent to Raygun you can call PHP's [error_reporting](http://php.net/manual/en/function.error-reporting.php) method which return 0 if the triggered error was preceded by an @ symbol.
+
+_Error handler example:_
+```php
+function error_handler($errno, $errstr, $errfile, $errline ) {
+    global $client;
+    if(error_reporting() !== 0) {
+        $client->SendError($errno, $errstr, $errfile, $errline);
+    }
+}
+```
+
+See the [Error Control Operators section on PHP.net](http://php.net/manual/en/language.operators.errorcontrol.php) for more information  
+
+## Changelog
+- 1.8.2: No longer output warning when a socket connection fails 
+- 1.8.1: Fix issue with error being raised with null bytes send with escapeshellarg method
+- 1.8.0: Bugfix with multiple cookies being set. Cookie options can be set via the setCookieOptions method
+- 1.7.1: Fixed illegal string offset
+- 1.7.0: Added custom error grouping
+- 1.6.1: Assign ClassName as exceptionClass
 - 1.6.0: Added HTTP proxy support, support X-Forwarded-For, null server var guards
 - 1.5.3: Unify property casing (internal change)
 - 1.5.2: Prevent error when query_string isn't present in $_SERVER
